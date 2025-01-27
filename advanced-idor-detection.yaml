@@ -1,0 +1,121 @@
+id: advanced-idor-detection
+info:
+  name: Advanced IDOR Detection Template
+  author: the_shadow_0
+  severity: high
+  description: |
+    This template identifies IDOR vulnerabilities using advanced techniques such as parameter manipulation, token testing, nested endpoint discovery, and multi-method exploitation.
+  tags: idor, authorization, web, api
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/user/{{id}}"
+      - "{{BaseURL}}/account/{{id}}/details"
+      - "{{BaseURL}}/order/{{id}}"
+      - "{{BaseURL}}/transaction/{{id}}/edit"
+      - "{{BaseURL}}/admin/{{id}}/actions"
+    headers:
+      Authorization: "{{Token}}"
+      Content-Type: "application/json"
+    matchers-condition: or
+    matchers:
+      - type: regex
+        regex:
+          - '.*"id":{{id}}.*'
+          - '.*"email":.*'
+          - '.*"user_role":.*'
+      - type: word
+        words:
+          - "Sensitive Data"
+          - "User ID:"
+      - type: status
+        status:
+          - 200
+          - 403
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/user/update"
+      - "{{BaseURL}}/transaction/modify"
+    body: |
+      {
+        "id": "{{id}}",
+        "status": "active"
+      }
+    headers:
+      Authorization: "{{Token}}"
+      Content-Type: "application/json"
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - "Successfully Updated"
+          - '"updated":true'
+      - type: status
+        status:
+          - 200
+          - 202
+
+  - method: DELETE
+    path:
+      - "{{BaseURL}}/admin/{{id}}/delete"
+    headers:
+      Authorization: "{{Token}}"
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - "Successfully Deleted"
+      - type: status
+        status:
+          - 200
+
+variables:
+  - name: id
+    payloads:
+      - integers:
+          start: 1
+          stop: 1000
+      - raw:
+          - "admin"
+          - "guest"
+          - "user"
+          - "1"
+          - "123"
+          - "9999"
+
+  - name: Token
+    payloads:
+      - raw:
+          - "Bearer VALID_TOKEN"
+          - "Bearer INVALID_TOKEN"
+          - ""
+          - "Bearer ANOTHER_USER_TOKEN"
+
+  - name: NestedEndpoint
+    payloads:
+      - raw:
+          - "details"
+          - "edit"
+          - "delete"
+
+post-extraction:
+  - type: regex
+    regex:
+      - '"sensitive_data":"(.*?)"'
+      - '"session_token":"(.*?)"'
+    part: body
+
+extractors:
+  - type: regex
+    regex:
+      - '"auth_token":"(.*?)"'
+    part: body
+
+matchers:
+  - type: regex
+    regex:
+      - "(Error:.*access denied)"
+      - "(Exception:.*)"
+      - "(Permission.*not granted)"
